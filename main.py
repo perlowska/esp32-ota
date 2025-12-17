@@ -10,10 +10,26 @@ FAN_RUN_SECONDS = 300          # 5 minuter
 FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
+SOIL_WATER_THRESHOLD = 80.0   # %
+PUMP_RUN_SECONDS = 10          # sekunder
+
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
 
 # ---- Fläkt (MOSFET Gate) ----
 fan_pin = Pin(19, Pin.OUT)
+fan_pin.value(0)
+
+# ---- Pump (MOSFET Gate)----
+pump_pin = Pin(23, Pin.OUT)
+pump_pin.value(0)   # säker OFF vid boot
+
+
+def run_pump(seconds):
+    print("Startar pump i", seconds, "sekunder")
+    pump_pin.value(1)
+    time.sleep(seconds)
+    pump_pin.value(0)
+    print("Pump stoppad")
 
 # ---- KNAPP för wake-up ----
 btn = Pin(4, Pin.IN, Pin.PULL_UP)      # välj GPIO som stöds för EXT0
@@ -77,7 +93,7 @@ def main():
     if reset_cause() == DEEPSLEEP_RESET and wake_reason() == EXT0_WAKE:
         temp_in, rh_in = read_sht41_in(sht_in)
         temp_ut, rh_ut = read_sht41_ut(sht_ut)
-        jf = "--"
+        jf = None
         oled.show_orkide_view(temp_in, rh_in, jf)
         jf = read_csms(15)
         oled.show_orkide_view(temp_in, rh_in, jf)
@@ -112,6 +128,11 @@ def main():
         wdt.feed()
         time.sleep(1) # behövs verkligen denna?
         ota.check_and_update()
+        
+        if jf is not None and jf < SOIL_WATER_THRESHOLD:
+            print("Knappväckning: jorden torr → vattnar")
+            run_pump(PUMP_RUN_SECONDS)
+        
         
         API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut)
         wdt.feed()
@@ -179,7 +200,7 @@ def main():
             delta_rh = abs(rh_in - rh_ut)
             oled.show_fan_view(temp_in, delta_temp, rh_in, delta_rh)
             print("Normal-mätning: T_in:{:.2f}C | Rh_in:{:.2f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, temp_ut, rh_ut))
-            API.send_data_fan(temp_in, rh_in, temp_ut, rh_ut)
+            API.send_data_(temp_in, rh_in, temp_ut, rh_ut)
             wdt.feed()
             time.sleep(FAN_SAMPLE_INTERVAL)
             wdt.feed()
@@ -194,6 +215,11 @@ def main():
         jf = read_csms(25)
         wdt.feed()
         print("Normal-mätning: T_in:{:.2f}C | Rh_in:{:.2f}% | Jf:{:.1f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, jf, temp_ut, rh_ut))
+        
+        if jf is not None and jf < SOIL_WATER_THRESHOLD:
+            print("Normalmätning: jorden torr → vattnar")
+            run_pump(PUMP_RUN_SECONDS)
+        
         API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut)
         wdt.feed()
 
@@ -238,3 +264,4 @@ def safe_main():
 while True:
     safe_main()
     wdt.feed()
+
