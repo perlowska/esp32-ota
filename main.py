@@ -10,7 +10,7 @@ FAN_RUN_SECONDS = 300          # 5 minuter
 FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
-SOIL_WATER_THRESHOLD = 80.0   # %
+SOIL_WATER_THRESHOLD = 75.0   # %
 PUMP_RUN_SECONDS = 10          # sekunder
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
@@ -20,8 +20,7 @@ fan_pin = Pin(19, Pin.OUT)
 fan_pin.value(0)
 
 # ---- Pump (MOSFET Gate)----
-pump_pin = Pin(23, Pin.OUT)
-pump_pin.value(0)   # säker OFF vid boot
+pump_pin = 23
 
 
 def run_pump(seconds):
@@ -89,6 +88,13 @@ def main():
     print("Main startar...")
     wdt.feed()
     
+    # --- re-initiera GPIO efter deepsleep ---
+    global pump_pin
+    global PUMP_RUN_SECONDS
+    pump_pin = Pin(23, Pin.OUT)
+    pump_pin.value(0)   # säker OFF
+    time.sleep_ms(50)   # ge MOSFET-gaten tid att stabiliseras
+    
     # ---- Knappväckning ----
     if reset_cause() == DEEPSLEEP_RESET and wake_reason() == EXT0_WAKE:
         temp_in, rh_in = read_sht41_in(sht_in)
@@ -129,12 +135,14 @@ def main():
         time.sleep(1) # behövs verkligen denna?
         ota.check_and_update()
         
+        vattnat = 0
         if jf is not None and jf < SOIL_WATER_THRESHOLD:
             print("Knappväckning: jorden torr → vattnar")
             run_pump(PUMP_RUN_SECONDS)
+            vattnat = PUMP_RUN_SECONDS
         
         
-        API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut)
+        API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
         wdt.feed()
         swe_now = sv.get_swedish_time()
         year, month, day, hour, minute, second, _, _ = swe_now
@@ -200,7 +208,7 @@ def main():
             delta_rh = abs(rh_in - rh_ut)
             oled.show_fan_view(temp_in, delta_temp, rh_in, delta_rh)
             print("Normal-mätning: T_in:{:.2f}C | Rh_in:{:.2f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, temp_ut, rh_ut))
-            API.send_data_(temp_in, rh_in, temp_ut, rh_ut)
+            API.send_data_fan(temp_in, rh_in, temp_ut, rh_ut)
             wdt.feed()
             time.sleep(FAN_SAMPLE_INTERVAL)
             wdt.feed()
@@ -216,11 +224,13 @@ def main():
         wdt.feed()
         print("Normal-mätning: T_in:{:.2f}C | Rh_in:{:.2f}% | Jf:{:.1f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, jf, temp_ut, rh_ut))
         
+        vattnat = 0
         if jf is not None and jf < SOIL_WATER_THRESHOLD:
             print("Normalmätning: jorden torr → vattnar")
             run_pump(PUMP_RUN_SECONDS)
-        
-        API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut)
+            vattnat = PUMP_RUN_SECONDS
+        print("vattnat=", vattnat)
+        API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
         wdt.feed()
 
     # --- Räkna ut nästa wake-up ---
