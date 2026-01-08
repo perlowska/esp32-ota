@@ -10,7 +10,7 @@ FAN_RUN_SECONDS = 300          # 5 minuter
 FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
-SOIL_WATER_THRESHOLD = 75.0   # %
+SOIL_WATER_THRESHOLD = 60.0   # %
 PUMP_RUN_SECONDS = 15          # sekunder
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
@@ -274,5 +274,6 @@ def safe_main():
 while True:
     safe_main()
     wdt.feed()
+
 
 
