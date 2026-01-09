@@ -10,6 +10,9 @@ FAN_RUN_SECONDS = 300          # 5 minuter
 FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
+
+WATERING = False
+
 SOIL_WATER_THRESHOLD = 60.0   # %
 PUMP_RUN_SECONDS = 15          # sekunder
 
@@ -134,12 +137,14 @@ def main():
         wdt.feed()
         time.sleep(1) # behövs verkligen denna?
         ota.check_and_update()
-        
+
+
         vattnat = 0
-        if jf is not None and jf < SOIL_WATER_THRESHOLD:
-            print("Knappväckning: jorden torr → vattnar")
-            run_pump(PUMP_RUN_SECONDS)
-            vattnat = PUMP_RUN_SECONDS
+        if WATERING:
+            if jf is not None and jf < SOIL_WATER_THRESHOLD:
+                print("Knappväckning: jorden torr → vattnar")
+                run_pump(PUMP_RUN_SECONDS)
+                vattnat = PUMP_RUN_SECONDS
         
         
         API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
@@ -225,10 +230,11 @@ def main():
         print("Normal-mätning: T_in:{:.2f}C | Rh_in:{:.2f}% | Jf:{:.1f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, jf, temp_ut, rh_ut))
         
         vattnat = 0
-        if jf is not None and jf < SOIL_WATER_THRESHOLD:
-            print("Normalmätning: jorden torr → vattnar")
-            run_pump(PUMP_RUN_SECONDS)
-            vattnat = PUMP_RUN_SECONDS
+        if WATERING:
+            if jf is not None and jf < SOIL_WATER_THRESHOLD:
+                print("Normalmätning: jorden torr → vattnar")
+                run_pump(PUMP_RUN_SECONDS)
+                vattnat = PUMP_RUN_SECONDS
         print("vattnat=", vattnat)
         API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
         wdt.feed()
@@ -274,6 +280,7 @@ def safe_main():
 while True:
     safe_main()
     wdt.feed()
+
 
 
 
