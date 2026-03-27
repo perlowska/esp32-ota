@@ -14,8 +14,8 @@ SAFETY_MARGIN = 10             # sekunder
 
 WATERING = True
 
-SOIL_WATER_THRESHOLD = 90.0   # %
-PUMP_RUN_SECONDS = 20         # sekunder
+SOIL_WATER_THRESHOLD = 75.0   # %
+PUMP_RUN_SECONDS = 30         # sekunder
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
 
