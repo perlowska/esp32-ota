@@ -1,4 +1,4 @@
-# v.9
+# v.10
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
