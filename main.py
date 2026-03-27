@@ -1,4 +1,4 @@
-# v.8
+# v.9
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
@@ -14,8 +14,8 @@ SAFETY_MARGIN = 10             # sekunder
 
 WATERING = True
 
-SOIL_WATER_THRESHOLD = 80.0   # %
-PUMP_RUN_SECONDS = 30         # sekunder
+SOIL_WATER_THRESHOLD = 90.0   # %
+PUMP_RUN_SECONDS = 20         # sekunder
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
 
