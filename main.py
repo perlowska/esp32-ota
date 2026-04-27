@@ -1,4 +1,4 @@
-# v.10
+# v.11
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
@@ -15,7 +15,7 @@ SAFETY_MARGIN = 10             # sekunder
 WATERING = True
 
 SOIL_WATER_THRESHOLD = 75.0   # %
-PUMP_RUN_SECONDS = 30         # sekunder
+PUMP_RUN_SECONDS = 20         # sekunder
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
 
@@ -32,6 +32,7 @@ def run_pump(seconds):
     pump_pin.value(1)
     time.sleep(seconds)
     pump_pin.value(0)
+    time.sleep(10) # vänta på att vattnet tagit sig till jordsensorn
     print("Pump stoppad")
 
 # ---- KNAPP för wake-up ----
