@@ -1,4 +1,4 @@
-# v.11
+# v.12
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
@@ -16,6 +16,7 @@ WATERING = True
 
 SOIL_WATER_THRESHOLD = 75.0   # %
 PUMP_RUN_SECONDS = 20         # sekunder
+WAIT_FOR_MOISTURE_SECS = 10   # sekunder
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
 
@@ -24,7 +25,7 @@ fan_pin = Pin(19, Pin.OUT)
 fan_pin.value(0)
 
 # ---- Pump (MOSFET Gate)----
-pump_pin = 23
+pump_gpio = 23
 
 
 def run_pump(seconds):
@@ -32,7 +33,7 @@ def run_pump(seconds):
     pump_pin.value(1)
     time.sleep(seconds)
     pump_pin.value(0)
-    time.sleep(10) # vänta på att vattnet tagit sig till jordsensorn
+    time.sleep(WAIT_FOR_MOISTURE_SECS) # vänta på att vattnet tagit sig till jordsensorn
     print("Pump stoppad")
 
 # ---- KNAPP för wake-up ----
@@ -86,7 +87,7 @@ def read_csms(iterations=25):
 
 # ---- WATCHDOG ---- 
 wdt = WDT(timeout=20000) #Initiera watchdog (20 sekunder är ganska säkert för dina mätningar)
-
+watering_wdt_time = (PUMP_RUN_SECONDS + WAIT_FOR_MOISTURE_SECS + 1) * 1000
 # ---- MAIN ----
 def main():
     time.sleep(0.5)
@@ -94,9 +95,7 @@ def main():
     wdt.feed()
     
     # --- re-initiera GPIO efter deepsleep ---
-    global pump_pin
-    global PUMP_RUN_SECONDS
-    pump_pin = Pin(23, Pin.OUT)
+    pump_pin = Pin(pump_gpio, Pin.OUT)
     pump_pin.value(0)   # säker OFF
     time.sleep_ms(50)   # ge MOSFET-gaten tid att stabiliseras
     
@@ -145,10 +144,11 @@ def main():
         if WATERING:
             if jf is not None and jf < SOIL_WATER_THRESHOLD:
                 print("Knappväckning: jorden torr → vattnar")
+                wdt.feed(watering_wdt_time)
                 run_pump(PUMP_RUN_SECONDS)
                 vattnat = PUMP_RUN_SECONDS
         
-        
+        wdt.feed()
         API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
         wdt.feed()
         swe_now = sv.get_swedish_time()
@@ -235,9 +235,11 @@ def main():
         if WATERING:
             if jf is not None and jf < SOIL_WATER_THRESHOLD:
                 print("Normalmätning: jorden torr → vattnar")
+                wdt.feed(watering_wdt_time)
                 run_pump(PUMP_RUN_SECONDS)
                 vattnat = PUMP_RUN_SECONDS
         print("vattnat=", vattnat)
+        wdt.feed()
         API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
         wdt.feed()
 
