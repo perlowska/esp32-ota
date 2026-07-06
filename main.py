@@ -5,20 +5,26 @@ import sh1106, wifi, sht41, soil_moisture_sensor, ota
 import svensk_tid as sv
 import API_ThingSpeak as API
 
+
 # ---- KONFIG ----
+SCREEN_TIME = 10               # secunder som skärmen ska vara igång
 NORMAL_INTERVAL_MIN = 10       # 10 minuter
 FAN_RUN_SECONDS = 300          # 5 minuter
 FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
-
+USE_WDT = True
 WATERING = True
 
 SOIL_WATER_THRESHOLD = 75.0   # %
-PUMP_RUN_SECONDS = 20         # sekunder
+UPPER_JF_THRESHOLD = 90.0     # %
+PUMP_RUN_SECONDS = 10         # sekunder
 WAIT_FOR_MOISTURE_SECS = 10   # sekunder
+WATERING_ITERATIONS = 4
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
+
+
 
 # ---- Fläkt (MOSFET Gate) ----
 fan_pin = Pin(19, Pin.OUT)
@@ -26,15 +32,6 @@ fan_pin.value(0)
 
 # ---- Pump (MOSFET Gate)----
 pump_gpio = 23
-
-
-def run_pump(seconds):
-    print("Startar pump i", seconds, "sekunder")
-    pump_pin.value(1)
-    time.sleep(seconds)
-    pump_pin.value(0)
-    time.sleep(WAIT_FOR_MOISTURE_SECS) # vänta på att vattnet tagit sig till jordsensorn
-    print("Pump stoppad")
 
 # ---- KNAPP för wake-up ----
 btn = Pin(4, Pin.IN, Pin.PULL_UP)      # välj GPIO som stöds för EXT0
@@ -50,6 +47,20 @@ i2c1 = I2C(1, scl=Pin(25), sda=Pin(26)) # SHT41 ute
 sht_in = sht41.SHT41(i2c0)
 sht_ut = sht41.SHT41(i2c1)
 oled = sh1106.SH1106_I2C(128, 64, i2c0)
+
+
+
+# ---- WATCHDOG ---- 
+if USE_WDT:
+    from machine import WDT
+    wdt = WDT(timeout=20000)
+else: # --- Dummy WDT ----
+    class DummyWDT:
+        def feed(self, t=None):
+            pass
+    wdt = DummyWDT()
+    
+watering_wdt_time = (PUMP_RUN_SECONDS + WAIT_FOR_MOISTURE_SECS + 1) * 1000
 
 # ---- säker NTP-hämtning ----
 def get_ntptime_safe():
@@ -84,10 +95,47 @@ def read_csms(iterations=25):
         print("CSMS error:", e)
         return None
 
+def start_sensor_oled(mode): 
+    jf_iter = 15 if mode == "Knappväckning" else 25
+    knapp = True if mode == "Knappväckning" else False
+    temp_in, rh_in = read_sht41_in(sht_in)
+    temp_ut, rh_ut = read_sht41_ut(sht_ut)
+    jf = None
+    if knapp: oled.show_orkide_view(temp_in, rh_in, jf)
+    jf = read_csms(jf_iter)
+    if knapp: oled.show_orkide_view(temp_in, rh_in, jf)
+    wdt.feed()
+    print(mode, ": T_in:{:.2f}C | Rh_in:{:.2f}% | Jf:{:.1f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, jf, temp_ut, rh_ut))
+    return temp_in, rh_in, temp_ut, rh_ut, jf
 
-# ---- WATCHDOG ---- 
-wdt = WDT(timeout=20000) #Initiera watchdog (20 sekunder är ganska säkert för dina mätningar)
-watering_wdt_time = (PUMP_RUN_SECONDS + WAIT_FOR_MOISTURE_SECS + 1) * 1000
+# --- Pump ---
+def run_pump(pump_pin, jf, mode):
+    vattnat = 0
+    try:
+        if WATERING:
+            if jf is not None and jf < SOIL_WATER_THRESHOLD:
+                print(mode, ": jorden torr → vattnar")
+                curr_water_iter = 0
+                while curr_water_iter < WATERING_ITERATIONS:
+                    wdt.feed(watering_wdt_time)
+                    curr_water_iter += 1
+                    print("Startar pump i", PUMP_RUN_SECONDS, "sekunder")
+                    pump_pin.value(1)
+                    time.sleep(PUMP_RUN_SECONDS)
+                    pump_pin.value(0)
+                    time.sleep(WAIT_FOR_MOISTURE_SECS) # vänta på att vattnet tagit sig till jordsensorn
+                    vattnat += PUMP_RUN_SECONDS
+                    jf = read_csms()
+                    print("Jordfuktighet: ", jf, "%")
+                    if jf >= UPPER_JF_THRESHOLD:
+                        break  
+                print("Pump klar, stoppad")
+    except Exception as e:
+        print("Pump error:", e)
+    return vattnat
+
+
+
 # ---- MAIN ----
 def main():
     time.sleep(0.5)
@@ -98,111 +146,43 @@ def main():
     pump_pin = Pin(pump_gpio, Pin.OUT)
     pump_pin.value(0)   # säker OFF
     time.sleep_ms(50)   # ge MOSFET-gaten tid att stabiliseras
-    
+    mode = "Normalmätning"
     # ---- Knappväckning ----
     if reset_cause() == DEEPSLEEP_RESET and wake_reason() == EXT0_WAKE:
-        temp_in, rh_in = read_sht41_in(sht_in)
-        temp_ut, rh_ut = read_sht41_ut(sht_ut)
-        jf = None
-        oled.show_orkide_view(temp_in, rh_in, jf)
-        jf = read_csms(15)
-        oled.show_orkide_view(temp_in, rh_in, jf)
-        wdt.feed()
-        print("Knapp-väckning: T_in:{:.2f}C | Rh_in:{:.2f}% | Jf:{:.1f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, jf, temp_ut, rh_ut))
-        delta_temp = abs(temp_in - temp_ut)
-        delta_rh = abs(rh_in - rh_ut)
-        visningstid = 10 # hur länge ska skärmen vara igång
-        t_slut = time.time() + visningstid
+        mode = "Knappväckning"
+        temp_in, rh_in, temp_ut, rh_ut, jf = start_sensor_oled(mode)
+        t_slut = time.time() + SCREEN_TIME
         runda = 0
         while time.time() < t_slut:
             if btn.value() == 0 and runda == 0:
-                oled.show_hus_view(temp_ut, delta_temp, rh_ut, delta_rh)
-                t_slut = time.time() + visningstid
+                oled.show_delta_view(mode, temp_in, temp_ut, rh_in, rh_ut)
+                t_slut = time.time() + SCREEN_TIME
                 runda = 1
                 time.sleep(0.5)
             if btn.value() == 0 and runda == 1:
                 oled.show_orkide_view(temp_in, rh_in, jf)
-                t_slut = time.time() + visningstid
+                t_slut = time.time() + SCREEN_TIME
                 runda = 0
                 time.sleep(0.5)
             time.sleep(0.1)
             wdt.feed()
             
         oled.poweroff()
-        
-        if not wifi.connect_wifi():
-            print("WiFi misslyckades")
-            return
-        wdt.feed()
-        get_ntptime_safe()
-        wdt.feed()
-        time.sleep(1) # behövs verkligen denna?
-        ota.check_and_update()
-
-
-        vattnat = 0
-        if WATERING:
-            if jf is not None and jf < SOIL_WATER_THRESHOLD:
-                print("Knappväckning: jorden torr → vattnar")
-                wdt.feed(watering_wdt_time)
-                run_pump(PUMP_RUN_SECONDS)
-                vattnat = PUMP_RUN_SECONDS
-        
-        wdt.feed()
-        API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
-        wdt.feed()
-        swe_now = sv.get_swedish_time()
-        year, month, day, hour, minute, second, _, _ = swe_now
-        tid, datum = sv.format_datetime(swe_now)
-        info = """
-                    Klockan är: {},
-                    Dagens datum: {}
-            """.format(tid, datum)
-        print(info)
-        print("Beräknar nästa wake-up efter knapptryck...")
-
-        now_secs = hour * 3600 + minute * 60 + second
-        today_secs = [h * 3600 + m * 60 for h, m in wake_times]
-        future_secs = [t for t in today_secs if t > now_secs]
-
-        if future_secs:
-            next_secs = future_secs[0]
-        else:
-            next_secs = today_secs[0] + 24 * 3600  # nästa dags första tid
-
-        sleep_time = next_secs - now_secs
-        sleep_time = max(0, sleep_time - SAFETY_MARGIN)  # marginal
-        # Se till att inte sova längre än normalmätningen om ingen fläkt snart
-        sleep_time = min(sleep_time, NORMAL_INTERVAL_MIN * 60)
-
-        print("Sover i", sleep_time, "sekunder (efter knappväckning).")
-        deepsleep(sleep_time * 1000)
 
 
     if not wifi.connect_wifi():
         print("WiFi misslyckades")
         return
     wdt.feed()
+
     get_ntptime_safe()
     wdt.feed()
     time.sleep(1)
     ota.check_and_update()
-    
-    swe_now = sv.get_swedish_time()
-    year, month, day, hour, minute, second, _, _ = swe_now
-    tid, datum = sv.format_datetime(swe_now)
-    info = """
-                    Klockan är: {},
-                    Dagens datum: {}
-        """.format(tid, datum)
-    print(info)
+    sv.format_datetime_print()
 
     # ---- Fläktfönster? ----
-    in_fan_window = False
-    for (wake_hour, wake_minute) in wake_times:
-        if wake_hour == hour and abs(minute - wake_minute) <= 1:
-            in_fan_window = True
-            break
+    in_fan_window = sv.in_time_window(wake_times)
 
     if in_fan_window:
         print("Startar fläkt")
@@ -211,10 +191,9 @@ def main():
         while time.time() < t_end:
             temp_in, rh_in = read_sht41_in(sht_in)
             temp_ut, rh_ut = read_sht41_ut(sht_ut)
-            delta_temp = abs(temp_in - temp_ut)
-            delta_rh = abs(rh_in - rh_ut)
-            oled.show_fan_view(temp_in, delta_temp, rh_in, delta_rh)
-            print("Normal-mätning: T_in:{:.2f}C | Rh_in:{:.2f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, temp_ut, rh_ut))
+            oled.show_delta_view(mode, temp_in, temp_ut, rh_in, rh_ut)
+            print(mode, ": T_in:{:.2f}C | Rh_in:{:.2f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, temp_ut, rh_ut))
+            
             API.send_data_fan(temp_in, rh_in, temp_ut, rh_ut)
             wdt.feed()
             time.sleep(FAN_SAMPLE_INTERVAL)
@@ -225,47 +204,19 @@ def main():
         print("Stänger fläkt")
     else:
         # Normalmätning
-        temp_in, rh_in = read_sht41_in(sht_in)
-        temp_ut, rh_ut = read_sht41_ut(sht_ut)
-        jf = read_csms(25)
-        wdt.feed()
-        print("Normal-mätning: T_in:{:.2f}C | Rh_in:{:.2f}% | Jf:{:.1f}% | T_ut:{:.2f}C | Rh_ut:{:.2f}%".format(temp_in, rh_in, jf, temp_ut, rh_ut))
-        
-        vattnat = 0
-        if WATERING:
-            if jf is not None and jf < SOIL_WATER_THRESHOLD:
-                print("Normalmätning: jorden torr → vattnar")
-                wdt.feed(watering_wdt_time)
-                run_pump(PUMP_RUN_SECONDS)
-                vattnat = PUMP_RUN_SECONDS
-        print("vattnat=", vattnat)
+        if mode == "Normalmätning": # dvs om mätningar ej gjorts vid knapptryck
+            temp_in, rh_in, temp_ut, rh_ut, jf = start_sensor_oled(mode)
+
+        vattnat = run_pump(pump_pin, jf, mode)
+
         wdt.feed()
         API.send_data_base(temp_in, rh_in, jf, temp_ut, rh_ut, vattnat)
         wdt.feed()
 
     # --- Räkna ut nästa wake-up ---
-    swe_now = sv.get_swedish_time()
-    year, month, day, hour, minute, second, _, _ = swe_now
-    tid, datum = sv.format_datetime(swe_now)
-    info = """
-                    Klockan är: {},
-                    Dagens datum: {}
-        """.format(tid, datum)
-    print(info)
-    
-    now_secs = hour * 3600 + minute * 60 + second
-    today_secs = [h * 3600 + m * 60 for h, m in wake_times]
-    future_secs = [t for t in today_secs if t > now_secs]
+    sv.format_datetime_print()
 
-    if future_secs:
-        next_secs = future_secs[0]
-    else:
-        next_secs = today_secs[0] + 24 * 3600  # nästa dags första tid
-
-    sleep_time = next_secs - now_secs
-    sleep_time = max(0, sleep_time - SAFETY_MARGIN)  # marginal
-    sleep_time = min(sleep_time, NORMAL_INTERVAL_MIN * 60)
-
+    sleep_time = sv.sleep_time(wake_times, SAFETY_MARGIN, NORMAL_INTERVAL_MIN)
     print("Sover i", sleep_time, "sekunder (med marginal).")
     deepsleep(sleep_time * 1000)
 
@@ -284,6 +235,7 @@ def safe_main():
 while True:
     safe_main()
     wdt.feed()
+
 
 
 
