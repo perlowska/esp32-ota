@@ -1,4 +1,4 @@
-# v.12
+# v.13
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
@@ -48,19 +48,20 @@ sht_in = sht41.SHT41(i2c0)
 sht_ut = sht41.SHT41(i2c1)
 oled = sh1106.SH1106_I2C(128, 64, i2c0)
 
-
+watering_iter_time = (PUMP_RUN_SECONDS + WAIT_FOR_MOISTURE_SECS + 1) * 1000
+wdt_time = min(watering_iter_time, 20000)
 
 # ---- WATCHDOG ---- 
 if USE_WDT:
     from machine import WDT
-    wdt = WDT(timeout=20000)
+    wdt = WDT(timeout=wdt_time)
 else: # --- Dummy WDT ----
     class DummyWDT:
         def feed(self, t=None):
             pass
     wdt = DummyWDT()
     
-watering_wdt_time = (PUMP_RUN_SECONDS + WAIT_FOR_MOISTURE_SECS + 1) * 1000
+
 
 # ---- säker NTP-hämtning ----
 def get_ntptime_safe():
@@ -117,13 +118,18 @@ def run_pump(pump_pin, jf, mode):
                 print(mode, ": jorden torr → vattnar")
                 curr_water_iter = 0
                 while curr_water_iter < WATERING_ITERATIONS:
-                    wdt.feed(watering_wdt_time)
+                    wdt.feed()
                     curr_water_iter += 1
                     print("Startar pump i", PUMP_RUN_SECONDS, "sekunder")
-                    pump_pin.value(1)
-                    time.sleep(PUMP_RUN_SECONDS)
-                    pump_pin.value(0)
+                    try:
+                        pump_pin.value(1)
+                        time.sleep(PUMP_RUN_SECONDS)
+                    finally:
+                        # Pumpen måste alltid stängas av, även om ett fel uppstår.
+                        pump_pin.value(0)
+                    wdt.feed()
                     time.sleep(WAIT_FOR_MOISTURE_SECS) # vänta på att vattnet tagit sig till jordsensorn
+                    wdt.feed()
                     vattnat += PUMP_RUN_SECONDS
                     jf = read_csms()
                     print("Jordfuktighet: ", jf, "%")
@@ -235,7 +241,6 @@ def safe_main():
 while True:
     safe_main()
     wdt.feed()
-
 
 
 
