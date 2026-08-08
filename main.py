@@ -1,4 +1,4 @@
-# v.13
+# v.14
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
@@ -14,7 +14,7 @@ FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
 USE_WDT = True
-WATERING = True
+WATERING = False
 
 SOIL_WATER_THRESHOLD = 75.0   # %
 UPPER_JF_THRESHOLD = 90.0     # %
