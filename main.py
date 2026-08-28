@@ -1,4 +1,4 @@
-# v.14
+# v.15
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
@@ -14,12 +14,12 @@ FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
 USE_WDT = True
-WATERING = False
+WATERING = True
 
 SOIL_WATER_THRESHOLD = 75.0   # %
 UPPER_JF_THRESHOLD = 90.0     # %
 PUMP_RUN_SECONDS = 10         # sekunder
-WAIT_FOR_MOISTURE_SECS = 10   # sekunder
+WAIT_FOR_MOISTURE_SECS = 15   # sekunder
 WATERING_ITERATIONS = 4
 
 wake_times = [(9, 5), (13, 5), (18, 5)] # (timme, minut) för fläktkörningar
