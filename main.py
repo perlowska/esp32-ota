@@ -1,4 +1,4 @@
-# v.17
+# v.18
 import time, ntptime, esp32, machine
 from machine import Pin, I2C, ADC, deepsleep, reset_cause, wake_reason, DEEPSLEEP_RESET, EXT0_WAKE, WDT
 import sh1106, wifi, sht41, soil_moisture_sensor, ota
@@ -7,13 +7,13 @@ import API_ThingSpeak as API
 
 
 # ---- KONFIG ----
-SCREEN_TIME = 10               # secunder som skärmen ska vara igång
+SCREEN_TIME = 10               # sekunder som skärmen ska vara igång
 NORMAL_INTERVAL_MIN = 10       # 10 minuter
 FAN_RUN_SECONDS = 300          # 5 minuter
 FAN_SAMPLE_INTERVAL = 15       # sekunder under fläktkörning
 SAFETY_MARGIN = 10             # sekunder
 
-USE_WDT = False
+USE_WDT = True
 WATERING = True
 
 SOIL_WATER_THRESHOLD = 75.0   # %
@@ -39,7 +39,7 @@ esp32.wake_on_ext0(pin=btn, level=0)    # väck på låg nivå
 
 # ---- CSMS (jordfuktighet) ----
 soil = ADC(Pin(34))
-csms = soil_moisture_sensor.CSMS(soil, min_value=3269, max_value=1807)
+csms = soil_moisture_sensor.CSMS(soil, min_value=3042, max_value=1052) #min_value=3269, max_value=1807)
 
 # ---- I2C (SHT41, oled) ----
 i2c0 = I2C(0, scl=Pin(32), sda=Pin(33)) # SHT41 inne och OLED
